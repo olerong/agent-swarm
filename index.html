@@ -228,7 +228,7 @@ let diffSettings={
   sonnet:{lives:3,eFireMul:1.0,eSpdMul:1.0,label:'SONNET',color:C.orange,desc:'Standard'},
   opus:  {lives:2,eFireMul:1.4,eSpdMul:1.2,label:'OPUS',color:C.red,desc:'For the bold'},
 };
-let deploying=false,deployTimer=0,deployY=0;
+let deployTimer=0,deployY=0;
 let titleDiffIdx=1; // 0=haiku,1=sonnet,2=opus
 const diffKeys=['haiku','sonnet','opus'];
 let glitchIntensity=0;
@@ -401,6 +401,12 @@ function drawPlayer(p){
 }
 
 function updatePlayer(p){
+  // Sync keyboard state (handles held keys across restarts)
+  if(!touchActive){
+    p.mv.l=keysDown.has('ArrowLeft')||keysDown.has('KeyA');
+    p.mv.r=keysDown.has('ArrowRight')||keysDown.has('KeyD');
+    p.fire=keysDown.has('Space');
+  }
   // Movement particle trails
   const wasX=p.x;
   if(p.tx!==null){
@@ -435,13 +441,15 @@ function fireBullet(p){
   const bx=p.x,by=p.y-p.h/2;
   const pc=p.pu==='cot';
   if(p.pu==='fork'){
-    bullets.push({x:bx,y:by,vy:-8,vx:0,w:4,h:10});
-    bullets.push({x:bx-14,y:by+4,vy:-7.5,vx:-1.8,w:4,h:10});
-    bullets.push({x:bx+14,y:by+4,vy:-7.5,vx:1.8,w:4,h:10});
+    bullets.push({x:bx,y:by,vy:-8,vx:0,w:4,h:10,fork:true});
+    bullets.push({x:bx-14,y:by+4,vy:-7.5,vx:-1.8,w:4,h:10,fork:true});
+    bullets.push({x:bx+14,y:by+4,vy:-7.5,vx:1.8,w:4,h:10,fork:true});
   }else if(p.pu==='yolo'){
     bullets.push({x:bx,y:by,vy:-6,vx:0,w:14,h:20,big:true});
   }else if(pc){
-    bullets.push({x:bx,y:by,vy:-8,vx:0,w:4,h:10,pierce:true});
+    bullets.push({x:bx,y:by,vy:-9,vx:0,w:6,h:14,pierce:true});
+  }else if(p.pu==='streaming'){
+    bullets.push({x:bx,y:by,vy:-10,vx:0,w:3,h:8,rapid:true});
   }else{
     bullets.push({x:bx,y:by,vy:-8,vx:0,w:4,h:10});
   }
@@ -487,7 +495,7 @@ function spawnBoss(wn){
   const bossHP=20+wn*5;
   boss={x:GW/2,y:-80,w:80,h:60,hp:bossHP,maxHp:bossHP,alive:true,
     vx:1.5,phase:0,fireTimer:0,fireRate:Math.max(30-wn,12),fl:0,
-    enterAnim:true,targetY:100,patterns:[0,1,2],patIdx:0,patTimer:0};
+    enterAnim:true,targetY:100,patterns:[0,1,2],patIdx:0,patTimer:0,rageTriggered:false};
   // Also spawn a few minions
   const dm=diffSettings[difficulty].eSpdMul;
   for(let i=0;i<Math.min(4+wn/2,10);i++){
@@ -730,7 +738,7 @@ const PU_TYPES=[
   {type:'streaming',label:'RAPID',color:C.cyan,desc:'RAPID FIRE!',icon:'»'},
   {type:'fork',label:'MULTI',color:C.purple,desc:'MULTI SHOT!',icon:'⋔'},
   {type:'yolo',label:'YOLO',color:C.red,desc:'YOLO MODE!',icon:'●'},
-  {type:'cot',label:'PIERC',color:C.gold,desc:'PIERCING!',icon:'↟'},
+  {type:'cot',label:'RAIL',color:C.gold,desc:'RAILGUN!',icon:'↟'},
   {type:'shield',label:'SHLD',color:C.shieldBlue,desc:'SHIELD UP!',icon:'◇'},
   {type:'nuke',label:'NUKE',color:'#FF4444',desc:'NUKE!',icon:'✕'},
 ];
@@ -816,16 +824,39 @@ function drawBullets(){
       ctx.font='5px "Press Start 2P"';ctx.textAlign='center';ctx.fillStyle='#FFF';
       ctx.fillText('Y',b.x,b.y+8);ctx.fillText('O',b.x,b.y+14);
     }else if(b.pierce){
-      // Chain of thought — golden with trail
-      ctx.fillStyle=C.gold;ctx.fillRect(b.x-b.w/2,b.y,b.w,b.h);
+      // RAILGUN — wide golden beam with long trail
+      // Glow
+      ctx.fillStyle=C.gold;ctx.globalAlpha=0.2;
+      ctx.fillRect(b.x-6,b.y-2,12,b.h+4);
+      ctx.globalAlpha=1;
+      // Main beam (wider than normal)
+      ctx.fillStyle=C.gold;ctx.fillRect(b.x-3,b.y,6,b.h);
       ctx.fillStyle='#FFF';ctx.fillRect(b.x-1,b.y+1,2,b.h-2);
-      // Trail dots
-      ctx.fillStyle=C.gold;ctx.globalAlpha=0.4;
-      ctx.fillRect(b.x-1,b.y+b.h+2,2,3);
-      ctx.globalAlpha=0.2;ctx.fillRect(b.x-1,b.y+b.h+6,2,2);
+      // Long trailing streak
+      ctx.fillStyle=C.gold;ctx.globalAlpha=0.5;
+      ctx.fillRect(b.x-2,b.y+b.h,4,8);
+      ctx.globalAlpha=0.3;ctx.fillRect(b.x-1,b.y+b.h+8,2,8);
+      ctx.globalAlpha=0.15;ctx.fillRect(b.x-1,b.y+b.h+16,2,6);
+      ctx.globalAlpha=1;
+    }else if(b.rapid){
+      // RAPID — small fast cyan dashes
+      ctx.fillStyle=C.cyan;ctx.fillRect(b.x-1,b.y,3,b.h);
+      ctx.fillStyle='#FFF';ctx.fillRect(b.x,b.y+1,1,b.h-2);
+      // Short speed trail
+      ctx.fillStyle=C.cyan;ctx.globalAlpha=0.3;
+      ctx.fillRect(b.x-1,b.y+b.h,2,4);
+      ctx.globalAlpha=1;
+    }else if(b.fork){
+      // MULTI — purple bullets with side flare
+      ctx.fillStyle=C.purple;ctx.fillRect(b.x-b.w/2,b.y,b.w,b.h);
+      ctx.fillStyle='#DDB8FF';ctx.fillRect(b.x-1,b.y+1,2,b.h-2);
+      // Tiny side flares
+      ctx.fillStyle=C.purple;ctx.globalAlpha=0.4;
+      ctx.fillRect(b.x-3,b.y+b.h/2-1,2,2);
+      ctx.fillRect(b.x+2,b.y+b.h/2-1,2,2);
       ctx.globalAlpha=1;
     }else{
-      // Normal — response token ▸
+      // Normal — response token
       ctx.fillStyle=C.claudeOrange;ctx.fillRect(b.x-b.w/2,b.y,b.w,b.h);
       ctx.fillStyle=C.cream;ctx.fillRect(b.x-1,b.y+1,2,b.h-2);
     }
@@ -877,6 +908,7 @@ function doNuke(){
     }
   }
   score+=nukeScore;
+  eBullets=[]; // Clear enemy bullets too
   boomRing(player.x,player.y,C.red,200);
   popup(GW/2,GH/2-40,'NUKE! +'+nukeScore,C.red,true);
 }
@@ -934,8 +966,9 @@ function checkCollisions(){
           contextWindow=Math.min(100,contextWindow+20);
         }else{
           sfx('hit');addShake(2);
-          // Boss rage — trigger once when crossing 30% HP threshold
-          if(boss.hp===Math.floor(boss.maxHp*0.3)){
+          // Boss rage — trigger once when dropping below 30% HP
+          if(!boss.rageTriggered&&boss.hp<=Math.floor(boss.maxHp*0.3)){
+            boss.rageTriggered=true;
             boss.fireRate=Math.max(12,boss.fireRate-10);
           }
         }
@@ -1087,7 +1120,7 @@ function drawHUD(){
   if(player?.pu){
     const col={streaming:C.cyan,fork:C.purple,yolo:C.red,cot:C.gold}[player.pu]||C.accent;
     ctx.font='8px "Press Start 2P"';ctx.textAlign='center';ctx.fillStyle=col;
-    const puLabel={streaming:'RAPID FIRE',fork:'MULTI SHOT',yolo:'YOLO MODE',cot:'PIERCING'}[player.pu]||player.pu.toUpperCase();
+    const puLabel={streaming:'RAPID FIRE',fork:'MULTI SHOT',yolo:'YOLO MODE',cot:'RAILGUN'}[player.pu]||player.pu.toUpperCase();
     ctx.fillText(puLabel,GW/2,GH-28);
   }
 
@@ -1291,7 +1324,7 @@ function drawGameOver(){
   const stats=[
     ['WAVE REACHED',wave.toString()],
     ['MAX COMBO',maxCombo.toString()],
-    ['ACCURACY',totalShots>0?(Math.round(totalHits/totalShots*100))+'%':'N/A'],
+    ['ACCURACY',totalShots>0?Math.min(100,Math.round(totalHits/totalShots*100))+'%':'N/A'],
     ['GRAZES',grazeCount.toString()],
     ['TIME SURVIVED',Math.floor(timeSurvived/60)+'s'],
     ['DIFFICULTY',diffSettings[difficulty].label],
@@ -1306,7 +1339,7 @@ function drawGameOver(){
 
   // Favorite power-up
   let favPU='NONE';let favCount=0;
-  const puNames={streaming:'RAPID',fork:'MULTI',yolo:'YOLO',cot:'BEAM',shield:'WARD',nuke:'NUKE'};
+  const puNames={streaming:'RAPID',fork:'MULTI',yolo:'YOLO',cot:'RAIL',shield:'SHLD',nuke:'NUKE'};
   for(const k in puUsed){if(puUsed[k]>favCount){favCount=puUsed[k];favPU=puNames[k]||k.toUpperCase()}}
   const favY=statsY+stats.length*18;
   ctx.textAlign='left';ctx.fillStyle=C.dim;ctx.fillText('FAVORITE POWERUP',GW/2-120,favY);
@@ -1344,17 +1377,18 @@ function drawPause(){
 function startGame(){
   ensureAudio();
   difficulty=diffKeys[titleDiffIdx];
-  deploying=true;deployTimer=0;state='deploying';
+  deployTimer=0;state='deploying';
   sfx('deploy');
   score=0;lives=diffSettings[difficulty].lives;wave=1;
   combo=0;comboTimer=0;maxCombo=0;newHi=false;
   contextWindow=0;grazeCount=0;totalShots=0;totalHits=0;timeSurvived=0;puUsed={};glitchIntensity=0;
+  showWaveBanner=false;waveBannerTimer=0;
   bullets=[];eBullets=[];particles=[];powerUps=[];popups=[];boss=null;
   player=mkPlayer();
 }
 
 function finishDeploy(){
-  state='playing';deploying=false;
+  state='playing';
   spawnWave(1);
   showWaveBanner=true;waveBannerTimer=120;sfx('wave');
   startBGM();
@@ -1414,7 +1448,9 @@ function draw(){
 function loop(){update();draw();requestAnimationFrame(loop)}
 
 // ─── KEYBOARD ────────────────────────────────────────────────────────
+const keysDown=new Set();
 document.addEventListener('keydown',e=>{
+  keysDown.add(e.code);
   if(e.code==='Enter'||e.code==='Space'){
     if(state==='title'){startGame();e.preventDefault();return}
     if(state==='gameover'){startGame();e.preventDefault();return}
@@ -1424,7 +1460,9 @@ document.addEventListener('keydown',e=>{
     if(e.code==='KeyD'||e.code==='ArrowRight'){titleDiffIdx=Math.min(2,titleDiffIdx+1);e.preventDefault();return}
   }
   if(e.code==='KeyP'&&(state==='playing'||state==='paused')){
-    state=state==='paused'?'playing':'paused';e.preventDefault();return;
+    if(state==='paused'){state='playing';startBGM()}
+    else{state='paused';stopBGM()}
+    e.preventDefault();return;
   }
   if(state==='playing'&&player){
     if(e.code==='ArrowLeft'||e.code==='KeyA')player.mv.l=true;
@@ -1433,6 +1471,7 @@ document.addEventListener('keydown',e=>{
   }
 });
 document.addEventListener('keyup',e=>{
+  keysDown.delete(e.code);
   if(!player)return;
   if(e.code==='ArrowLeft'||e.code==='KeyA')player.mv.l=false;
   if(e.code==='ArrowRight'||e.code==='KeyD')player.mv.r=false;
