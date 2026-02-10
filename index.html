@@ -729,7 +729,14 @@ function updateEnemies(){
   for(const e of enemies){
     if(!e.alive)continue;
     if(Math.random()<eFire)eBullets.push({x:e.x,y:e.y+e.h/2,vy:Math.min(3.5+wave*0.2,6.5),vx:0,w:5,h:10});
-    if(e.y+e.h/2>player.y-30)triggerGameOver();
+    // Diving enemies: check body collision with player
+    if(e.diving&&player.inv<=0&&hitbox(e.x,e.y,e.w,e.h,player.x,player.y,player.w,player.h)){
+      e.alive=false;enemyDeathEffect(e);
+      if(player.shield){player.shield=false;player.shieldTime=0;sfx('shield');boom(player.x,player.y,C.shieldBlue,12);popup(player.x,player.y-30,'SHIELD BLOCKED!',C.shieldBlue);addShake(4)}
+      else{hitPlayer()}
+    }
+    // Non-diving enemies reaching player line = overrun
+    if(!e.diving&&e.y+e.h/2>player.y-30){if(player.inv<=0){hitPlayer()}e.alive=false;enemyDeathEffect(e)}
   }
 }
 
