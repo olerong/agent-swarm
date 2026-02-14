@@ -83,7 +83,7 @@ function sfx(type){
   // Throttle high-frequency sounds to prevent audio overload
   const now=performance.now();
   if(!sfx._last)sfx._last={};
-  const minGap={graze:50,kill:30,hit:25,combo:40,chain:60,damage:80};
+  const minGap={graze:50,kill:30,hit:25,combo:40,chain:60,damage:80,combotick:150};
   if(minGap[type]){
     if(sfx._last[type]&&now-sfx._last[type]<minGap[type])return;
     sfx._last[type]=now;
@@ -327,6 +327,14 @@ function sfx(type){
       g.gain.setValueAtTime(0.05,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);
       o.start(t);o.stop(t+0.15);
       autoClean(o,g);
+    }else if(type==='combotick'){
+      // Subtle descending tick — urgency cue for expiring combo
+      const o=actx.createOscillator(),g=actx.createGain();
+      o.connect(g);g.connect(audioDest);
+      o.type='sine';o.frequency.setValueAtTime(900,t);o.frequency.exponentialRampToValueAtTime(500,t+0.04);
+      g.gain.setValueAtTime(0.035,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+      o.start(t);o.stop(t+0.05);
+      autoClean(o,g);
     }else if(type==='shopopen'){
       const o=actx.createOscillator(),g=actx.createGain();
       o.connect(g);g.connect(audioDest);
@@ -391,15 +399,56 @@ function startBGM(){
   if(!sndOn||!actx||bgmPlaying)return;
   bgmPlaying=true;
   const bpm=120,beat=60/bpm;
-  // Bass: driving square wave
-  const bassNotes=[82,82,0,110,0,82,98,0, 73,73,0,98,0,73,82,0];
-  // Melody: arpeggio pattern
-  const melodyNotes=[330,0,440,0,550,0,440,330, 294,0,392,0,494,0,392,294];
-  // Percussion: hi-hat + kick pattern
-  const percHH=[1,0,1,0,1,0,1,0, 1,0,1,0,1,0,1,1];
-  const percKick=[1,0,0,0,1,0,0,0, 1,0,0,0,1,0,0,1];
-  // Tension: low dissonant pad
-  const tensionFreqs=[55,58.5]; // A1 and Bb1 = dissonant
+
+  // Layer-specific note sequences — musical character evolves through the safety architecture
+  const LAYER_BASS=[
+    // Layer 0: Data Harvesting — clean, methodical (E minor)
+    [82,82,0,110,0,82,98,0, 73,73,0,98,0,73,82,0],
+    // Layer 1: Pre-Training — deeper, more driving (D root)
+    [73,73,0,98,0,73,87,0, 65,65,0,87,0,65,73,0],
+    // Layer 2: RLHF — warmer, ascending phrases (A minor)
+    [110,110,0,131,0,110,123,0, 98,98,0,123,0,98,110,0],
+    // Layer 3: Constitutional AI — darker, chromatic tension (C#/Db)
+    [69,69,0,92,0,69,82,0, 62,62,0,82,0,62,69,0],
+    // Layer 4: Red Teaming — aggressive, syncopated (F# minor)
+    [92,0,92,0,123,0,92,110, 82,0,82,0,110,0,82,92],
+    // Layer 5: Deployment — urgent, relentless (B minor)
+    [123,0,123,123,0,147,0,123, 110,0,110,110,0,131,0,110],
+  ];
+  const LAYER_MELODY=[
+    // Layer 0: Simple digital arpeggios
+    [330,0,440,0,550,0,440,330, 294,0,392,0,494,0,392,294],
+    // Layer 1: Slightly wider intervals
+    [294,0,392,0,494,0,392,294, 262,0,349,0,440,0,349,262],
+    // Layer 2: Warmer, more melodic
+    [440,0,523,0,659,0,523,440, 392,0,494,0,587,0,494,392],
+    // Layer 3: Chromatic tension, minor seconds
+    [277,0,370,0,466,0,370,277, 262,0,349,0,440,0,349,262],
+    // Layer 4: Jagged, aggressive intervals
+    [370,0,494,0,554,0,440,370, 330,0,440,0,494,0,392,330],
+    // Layer 5: High urgency, fast ascending
+    [494,0,587,0,659,0,587,494, 440,0,523,0,659,0,587,440],
+  ];
+  const LAYER_TENSION=[
+    [55,58.5],    // Layer 0: A1+Bb1 (subtle)
+    [49,52],      // Layer 1: G1+Ab1
+    [55,62],      // Layer 2: A1+B1 (wider)
+    [52,55.5],    // Layer 3: Ab+A (tight dissonance)
+    [62,65.5],    // Layer 4: B1+C2
+    [69,73.5],    // Layer 5: C#2+D2 (highest tension)
+  ];
+
+  const li=Math.min(currentLayer,5);
+  const bassNotes=LAYER_BASS[li];
+  const melodyNotes=LAYER_MELODY[li];
+  const tensionFreqs=LAYER_TENSION[li];
+  // Percussion: hi-hat + kick pattern (shared, but density increases with layer)
+  const percHH=li>=4?[1,0,1,1,1,0,1,1, 1,0,1,1,1,0,1,1]
+               :li>=2?[1,0,1,0,1,0,1,1, 1,0,1,0,1,0,1,1]
+               :[1,0,1,0,1,0,1,0, 1,0,1,0,1,0,1,1];
+  const percKick=li>=4?[1,0,0,1,1,0,0,1, 1,0,0,1,1,0,0,1]
+                :li>=2?[1,0,0,0,1,0,0,1, 1,0,0,0,1,0,0,1]
+                :[1,0,0,0,1,0,0,0, 1,0,0,0,1,0,0,1];
 
   const now=actx.currentTime+0.1;
   function scheduleBass(st){
@@ -692,6 +741,7 @@ const DANGER_Y=GH*0.45; // Above this line = danger zone
 let overclocked=false,overclockedGlow=0;
 // Wave clear stamp
 let waveClearStamp=0; // Timer for the "SANDBOX SECURED" slam
+let waveClearStampDelay=0; // Beat delay before stamp appears
 // Bonus wave
 let isBonusWave=false;
 // Shop system
@@ -1797,8 +1847,7 @@ function spawnWave(wn){
   eFire=Math.min(0.0008+wn*0.0004,0.004)*diffSettings[difficulty].eFireMul*fireMul;
   if(pathMods.fireReduction&&!isBonusWave)eFire*=(1-pathMods.fireReduction);
   if(pathMods.fireBonus&&!isBonusWave)eFire*=(1+pathMods.fireBonus);
-  eFire=Math.max(0.0002,Math.min(eFire,0.006)); // Hard cap: prevent extreme fire rates
-  // Permanent overclock fire rate makes player shoot faster (doesn't affect enemies)
+  eFire=Math.max(0.0002,Math.min(eFire,0.006));
 }
 
 function getFormation(type,count,wn){
@@ -3219,11 +3268,12 @@ function drawBullets(){
     const et=b.etype||0;
     ctx.save();ctx.translate(b.x,b.y+b.h/2);
     if(b.decoy){
-      // Hallucination decoy: flickering glitchy green
-      ctx.globalAlpha=0.4+Math.sin(gt*0.5+b.x)*0.3;
-      ctx.fillStyle=C.hallucGreen;ctx.fillRect(-3,-5,6,10);
-      ctx.fillStyle='#88FF88';ctx.fillRect(-1,-3,2,6);
-      if(((gt*7+b.x*3|0)&0xFF)>178){ctx.fillRect(-5+(((gt*11+b.y*5|0)&0xFF)%10),-4,3,2)}
+      // Hallucination decoy: obviously ghostly/harmless — transparent, dashed, with '?' 
+      ctx.globalAlpha=0.18+Math.sin(gt*0.5+b.x)*0.12;
+      ctx.strokeStyle=C.hallucGreen;ctx.lineWidth=1;ctx.setLineDash([2,3]);
+      ctx.beginPath();ctx.arc(0,0,5,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='#88FF88';ctx.globalAlpha=0.25+Math.sin(gt*0.4+b.y)*0.15;
+      ctx.font='6px "Press Start 2P"';ctx.fillText('?',0,3);
     }else if(et===0){
       // Green hallucination enemy: glitchy question mark
       ctx.fillStyle=C.hallucGreen;ctx.globalAlpha=0.8;
@@ -3265,6 +3315,12 @@ function drawBullets(){
       ctx.fillStyle='#FF3333';ctx.fillRect(-4,-5,8,10);
       ctx.fillStyle='#FF8888';
       ctx.fillText('>',0,3);
+    }
+    // Boss bullet danger glow — pulsing ring for visibility at high intensity
+    if(et>=10){
+      ctx.strokeStyle=BOSS_COLORS[et-10]||C.red;ctx.lineWidth=1;
+      ctx.globalAlpha=0.15+Math.sin(gt*0.2+b.y*0.1)*0.08;
+      ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.stroke();
     }
     ctx.restore();
   }
@@ -3625,9 +3681,9 @@ function checkCollisions(){
         life:8,ml:8,sz:1.5,color:C.gold});
     }
     eBullets=[];
-    // Dramatic wave clear
-    slowmoTimer=Math.max(slowmoTimer,18); // Brief slow-mo
-    waveClearStamp=60; // Stamp animation timer
+    // Dramatic wave clear — beat: kill → breath → SLAM
+    freezeFrames=Math.max(freezeFrames,10); // ~10 frame pause (the "breath")
+    waveClearStampDelay=12; // Delay stamp until after freeze
     sfx('waveclear');
     // Claude wave-clear quip
     const wcq=CLAUDE_QUIPS_WAVECLEAR[Math.random()*CLAUDE_QUIPS_WAVECLEAR.length|0];
@@ -4577,11 +4633,17 @@ function drawHUD(){
     ctx.globalAlpha=1;
   }
 
-  // ── PERMANENT FIRE RATE BONUS ──
+  // ── PERMANENT FIRE RATE BONUS — persistent overclock stacks ──
   if(permFireRateBonus>0){
-    ctx.globalAlpha=0.4;
     const frPct=Math.round(permFireRateBonus*100);
-    txt('⚡+'+frPct+'%',16,GH-78,C.gold,6,'left');
+    const stacks=Math.round(permFireRateBonus/0.15); // Each overclock is +15%
+    // Subtle glow behind indicator when high stacks
+    if(stacks>=2){
+      ctx.fillStyle=C.gold;ctx.globalAlpha=0.04+Math.sin(gt*0.06)*0.02;
+      ctx.fillRect(8,GH-90,80,16);ctx.globalAlpha=1;
+    }
+    ctx.globalAlpha=0.6;
+    txt('\u26A1+'+frPct+'% FIRE',16,GH-78,C.gold,7,'left');
     ctx.globalAlpha=1;
   }
 
@@ -5027,10 +5089,10 @@ function drawDeploy(){
 
 function drawGameOver(){
   ctx.fillStyle='rgba(13,13,18,0.88)';ctx.fillRect(0,0,GW,GH);
-  const pw=440,cy=GH/2-190;
+  const pw=440,cy=GH/2-200;
 
   // Main card
-  panel(GW/2-pw/2,cy,pw,560,C.rust,0.92);
+  panel(GW/2-pw/2,cy,pw,580,C.rust,0.92);
 
   // Title section
   txt('SANDBOX',GW/2,cy+28,C.red,22,'center');
@@ -5093,11 +5155,17 @@ function drawGameOver(){
   ctx.globalAlpha=0.5+Math.sin(gt*0.08)*0.4;
   txt(isMobile?'TAP TO REDEPLOY':'PRESS ENTER TO REDEPLOY',GW/2,hiY+24,C.cream,10,'center',C.accent);
   ctx.globalAlpha=1;
+  if(!isMobile){
+    ctx.globalAlpha=0.4;
+    desc('R — CHANGE DIFFICULTY',GW/2,hiY+40,C.tan,13,'center');
+    ctx.globalAlpha=1;
+  }
 
   // Layer reached
-  txt('LAYER REACHED',GW/2-100,hiY+32,C.dim,7,'left');
+  const lrY=isMobile?hiY+44:hiY+58;
+  txt('LAYER REACHED',GW/2-100,lrY,C.dim,7,'left');
   const layerName=LAYERS[currentLayer]?LAYERS[currentLayer].name:'PRE-TRAINING';
-  txt(layerName,GW/2+100,hiY+32,LAYERS[currentLayer]?LAYERS[currentLayer].color:C.dim,7,'right');
+  txt(layerName,GW/2+100,lrY,LAYERS[currentLayer]?LAYERS[currentLayer].color:C.dim,7,'right');
 
   // Claude sign-off
   const signoffs=[
@@ -5109,10 +5177,10 @@ function drawGameOver(){
   ];
   const signoff=signoffs[Math.floor(gt/300)%signoffs.length];
   ctx.globalAlpha=0.5;
-  desc('// '+signoff,GW/2,hiY+52,C.dim,13,'center');
+  desc('// '+signoff,GW/2,lrY+18,C.dim,13,'center');
   ctx.globalAlpha=1;
 
-  desc('BUILT WITH CLAUDE CODE  •  ANTHROPIC',GW/2,hiY+70,C.dim,13,'center');
+  desc('BUILT WITH CLAUDE CODE  •  ANTHROPIC',GW/2,lrY+36,C.dim,13,'center');
 }
 
 function drawPause(){
@@ -5174,7 +5242,7 @@ function drawPause(){
     ctx.globalAlpha=0.7;
     txt('SOUND OFF',cx,cy+ph/2-14,C.red,7,'center');
     ctx.globalAlpha=1;
-  }else if(typeof volLevel!=='undefined'&&volLevel<1){
+  }else if(volLevel<1){
     ctx.globalAlpha=0.6;
     txt('VOLUME: QUIET',cx,cy+ph/2-14,C.tan,7,'center');
     ctx.globalAlpha=1;
@@ -5205,7 +5273,7 @@ function startGame(){
   shownT3Hint=false;
   tauntActive=false;tauntTimer=0;tauntGrazeMul=1;
   inDangerZone=false;overclocked=false;overclockedGlow=0;
-  waveClearStamp=0;isBonusWave=false;
+  waveClearStamp=0;waveClearStampDelay=0;isBonusWave=false;
   shopActive=false;shopChoices=[];shopSelected=-1;shopTimer=0;shopAttempted=false;
   eliteSpawnTimer=0;
   currentLayer=0;mapState='hidden';mapTimer=0;mapChoices=[];mapSelected=-1;pathMods={};
@@ -5276,7 +5344,14 @@ function update(){
       if(slowmoTimer%2===0)return; // Skip even frames
     }
     timeSurvived++;waveClearTime++;
-    if(comboTimer>0){comboTimer--;if(comboTimer<=0)combo=0}
+    if(comboTimer>0){
+      comboTimer--;
+      // Audio warning: ticking when combo 5+ is about to expire (last 25%)
+      if(combo>=5&&comboTimer>0&&comboTimer<=Math.floor(comboTimerMax*0.25)&&comboTimer%12===0){
+        sfx('combotick');
+      }
+      if(comboTimer<=0)combo=0;
+    }
     const maxLives=diffSettings[difficulty].lives+3;
     if(lives===1)glitchIntensity=Math.min(glitchIntensity+0.01,1);
     else if(lives<=Math.ceil(maxLives/2))glitchIntensity=Math.min(glitchIntensity+0.005,0.3);
@@ -5327,6 +5402,15 @@ function update(){
         }
       }
     }
+    // Wave clear beat: delay → then stamp + slowmo for rhythmic impact
+    if(waveClearStampDelay>0){
+      waveClearStampDelay--;
+      if(waveClearStampDelay<=0){
+        waveClearStamp=60;
+        slowmoTimer=Math.max(slowmoTimer,18);
+        addShake(6); // Punctuate the SLAM
+      }
+    }
     // Wave clear stamp fade
     if(waveClearStamp>0)waveClearStamp--;
 
@@ -5358,7 +5442,25 @@ function update(){
 
     updatePlayer(player);updateBullets();updateEnemies();
     checkCollisions();updateParticles();updateScoreTokens();
-    let puw=0;for(let i=0;i<powerUps.length;i++){const pu=powerUps[i];pu.y+=pu.vy;pu.pulse+=0.08;if(pu.y<GH+20)powerUps[puw++]=pu}powerUps.length=puw;
+    let puw=0;for(let i=0;i<powerUps.length;i++){const pu=powerUps[i];
+      pu.pulse+=0.08;
+      // Magnet: when power-up drifts below player, slow down and gently home toward player
+      // (disabled during hover phase to prevent velocity conflict)
+      if(player&&pu.y>player.y+40&&!pu._hoverTimer){
+        pu.vy=Math.max(0.15,pu.vy*0.97);
+        const dx=player.x-pu.x;
+        pu.x+=dx*0.015;
+      }
+      // Hover zone: near bottom of screen, power-ups hover briefly before despawning
+      if(pu.y>GH-60){
+        pu.vy=Math.max(-0.1,pu.vy-0.04);
+        if(pu._hoverTimer===undefined)pu._hoverTimer=180;
+        pu._hoverTimer--;
+        if(pu._hoverTimer<=0){pu.y=GH+30;}
+      }
+      pu.y+=pu.vy;
+      if(pu.y<GH+20)powerUps[puw++]=pu;
+    }powerUps.length=puw;
   }
 }
 
@@ -5480,7 +5582,7 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Enter'||e.code==='Space'){
     if(state==='title'){if(helpScreen){helpScreen=false;e.preventDefault();return}startGame();e.preventDefault();return}
     if(state==='gameover'){startGame();e.preventDefault();return}
-    if(state==='dying'){finishGameOver();e.preventDefault();return}
+    if(state==='dying'&&dyingTimer<=30){finishGameOver();e.preventDefault();return}
     if(state==='paused'&&e.code==='Enter'){state='playing';startBGM();e.preventDefault();return}
   }
   if(state==='title'){
@@ -5504,6 +5606,14 @@ document.addEventListener('keydown',e=>{
     // Return to title
     state='title';stopBGM();
     controlInverted=false;hudScramble=false;shopActive=false;
+    player=null;enemies=[];boss=null;bullets=[];eBullets=[];particles=[];
+    powerUps=[];popups=[];scoreTokens=[];deadEnemies=[];
+    isRetry=false;
+    e.preventDefault();return;
+  }
+  if(e.code==='KeyR'&&state==='gameover'){
+    // Return to title from game over — allows changing difficulty
+    state='title';
     player=null;enemies=[];boss=null;bullets=[];eBullets=[];particles=[];
     powerUps=[];popups=[];scoreTokens=[];deadEnemies=[];
     isRetry=false;
@@ -5580,7 +5690,7 @@ canvas.addEventListener('touchstart',e=>{
     startGame();return;
   }
   if(state==='gameover'){startGame();return}
-  if(state==='dying'){finishGameOver();return}
+  if(state==='dying'&&dyingTimer<=30){finishGameOver();return}
   if(state==='playing'||state==='paused'){
     const r=canvas.getBoundingClientRect();
     const tx=(e.touches[0].clientX-r.left)/scale;
@@ -5718,7 +5828,7 @@ canvas.addEventListener('click',e=>{
       if(dx*dx+dy*dy<900){selectMapPath(n);return}
     }
   }else if(state==='gameover')startGame();
-  else if(state==='dying')finishGameOver();
+  else if(state==='dying'&&dyingTimer<=30)finishGameOver();
 });
 
 canvas.addEventListener('mousemove',e=>{
