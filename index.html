@@ -45,9 +45,9 @@ function resize(){
   canvas.style.top=((wh-GH*scale)/2)+'px';
   // Invalidate cached gradients (safe: vars may not exist on initial call)
   try{
-    if(typeof drawEnemy!=='undefined')drawEnemy._eliteGrad=null;
-    _fullCtxGlowGrad=null;
-    _vigGrad=null;_vigRedGrad=null;_vigYoloGrad=null;_vigCachedSize=0;
+    if(typeof drawEnemy==='function'&&drawEnemy._eliteGrad)drawEnemy._eliteGrad=null;
+    if(typeof _fullCtxGlowGrad!=='undefined')_fullCtxGlowGrad=null;
+    if(typeof _vigGrad!=='undefined'){_vigGrad=null;_vigRedGrad=null;_vigYoloGrad=null;_vigCachedSize=0;}
   }catch(e){}
 }
 window.addEventListener('resize',resize);resize();
@@ -1047,7 +1047,7 @@ function applyWeaponPickup(puType){
       // T3 fusion hint (one-time)
       if(p.weaponTier===3&&!shownT3Hint){
         shownT3Hint=true;
-        setTimeout(()=>{if(state==='playing'&&player)popup(player.x,player.y-80,'TIP: GRAB A DIFFERENT WEAPON TO FUSE!',C.gold,true)},800);
+        setTimeout(()=>{if(state==='playing'&&player&&player.weaponTier>=3)popup(player.x,player.y-80,'TIP: GRAB A DIFFERENT WEAPON TO FUSE!',C.gold,true)},800);
       }
     }else{
       // Already T3 — refresh timer + bonus
@@ -1189,14 +1189,15 @@ function drawGlitch(){
     // Use drawImage self-copy instead of expensive getImageData/putImageData
     try{ctx.drawImage(canvas,0,y,GW,h,shift,y,GW,h)}catch(e){}
   }
-  if(Math.random()<glitchIntensity*0.15){
-    ctx.fillStyle=Math.random()>0.5?'rgba(255,0,0,0.06)':'rgba(0,255,255,0.06)';
+  if(Math.random()<glitchIntensity*0.1){
+    ctx.fillStyle=Math.random()>0.5?'rgba(255,0,0,0.04)':'rgba(0,255,255,0.04)';
     ctx.fillRect(0,0,GW,GH);
   }
-  if(Math.random()<glitchIntensity*0.03){
+  if(Math.random()<glitchIntensity*0.015){
     ctx.globalCompositeOperation='difference';
-    ctx.fillStyle='rgba(255,255,255,0.15)';
-    ctx.fillRect(0,Math.random()*GH|0,GW,20+Math.random()*40);
+    ctx.fillStyle='rgba(255,255,255,0.07)';
+    const stripH=10+Math.random()*20;
+    ctx.fillRect(0,Math.random()*GH|0,GW,stripH);
     ctx.globalCompositeOperation='source-over';
   }
 }
@@ -1508,11 +1509,13 @@ function updatePlayer(p){
     p.trail.push({x:p.x,y:p.y,life:8});
     if(p.trail.length>4)p.trail.shift();
   }
-  // Decay all trail entries; remove dead ones
-  for(let i=p.trail.length-1;i>=0;i--){
+  // Decay all trail entries; remove dead ones (in-place compaction)
+  let tw=0;
+  for(let i=0;i<p.trail.length;i++){
     p.trail[i].life-=0.5;
-    if(p.trail[i].life<=0)p.trail.splice(i,1);
+    if(p.trail[i].life>0)p.trail[tw++]=p.trail[i];
   }
+  p.trail.length=tw;
   if(p.inv>0)p.inv--;
   if(p.shield&&waveTransTimer<=0&&bossIntroTimer<=0){p.shieldTime--;if(p.shieldTime<=0)p.shield=false}
   // Weapon timers — with retention on expiry (paused during wave transitions)
@@ -1969,7 +1972,7 @@ function spawnBoss(wn){
       boss.shieldNodes.push({angle:a,hp:3+Math.floor(wn/5),alive:true,dist:55});
     }
     // Hint on first encounter
-    setTimeout(()=>{if(state==='playing'&&boss&&boss.alive)popup(GW/2,GH/2+50,'DESTROY SHIELD NODES FIRST!',C.gold,true)},2200);
+    setTimeout(()=>{if(state==='playing'&&boss&&boss.alive&&bossIntroTimer<=0)popup(GW/2,GH/2+50,'DESTROY SHIELD NODES FIRST!',C.gold,true)},2200);
   }
 
   // Spawn minions
@@ -2076,7 +2079,7 @@ function updateBossAlignment(){
     boss.gravTimer=0;
     sfx('gravity');
   }
-  if(player&&boss.gravTimer<60&&waveTransTimer<=0){
+  if(player&&player.inv<=0&&boss.gravTimer<60&&waveTransTimer<=0){
     const dx=boss.x-player.x,dy=boss.y-player.y;
     const dist=Math.sqrt(dx*dx+dy*dy)||1;
     const pull=boss.rageTriggered?0.5:0.25;
@@ -2569,7 +2572,7 @@ function updateEnemies(){
         if(e._diveWindup<=0){e.diving=true;e.diveVy=3+Math.random()*2}
       }
     }
-    if(e.diving){e.y+=e.diveVy;e.diveVy+=0.05;if(e.y>GH+40){e.alive=false;enemyDeathEffect(e);score+=(e.type+1)*25;lifetimeStats.kills++;continue}}
+    if(e.diving){e.y+=e.diveVy;e.diveVy+=0.05;if(e.y>GH+40){e.alive=false;score+=(e.type+1)*25;lifetimeStats.kills++;continue}}
     if(e.strafe&&!e.strafing&&!e.diving){
       e.strafeTimer--;
       if(e.strafeTimer<=0){e.strafing=true;e.strafeVx=(Math.random()>0.5?1:-1)*(3+Math.random()*2);e.strafeTimer=60+Math.random()*60|0}
@@ -3074,7 +3077,7 @@ function drawVignette(){
   ctx.fillStyle=_vigGrad;ctx.fillRect(0,0,GW,GH);
   // Red tint at edges when at 1 life
   if(lives<=1){
-    ctx.globalAlpha=vignetteAlpha*0.3*Math.abs(Math.sin(gt*0.06));
+    ctx.globalAlpha=vignetteAlpha*0.2*(0.5+Math.sin(gt*0.04)*0.5);
     ctx.fillStyle=_vigRedGrad;ctx.fillRect(0,0,GW,GH);
   }
   ctx.restore();
@@ -3370,10 +3373,13 @@ function updateBullets(){
     if(b.y>-20&&b.y<GH+20&&b.x>-20&&b.x<GW+20){eBullets[ew++]=b}
   }
   eBullets.length=ew;
+  // Soft cap: remove oldest enemy bullets when over budget (prevents boss fight lag)
+  if(eBullets.length>150){
+    const drop=eBullets.length-120;
+    for(let i=0;i<120;i++)eBullets[i]=eBullets[i+drop];
+    eBullets.length=120;
+  }
 }
-
-// ═══════════════════════════════════════════════════════════════════════
-// COLLISION
 // ═══════════════════════════════════════════════════════════════════════
 function hitbox(ax,ay,aw,ah,bx,by,bw,bh){
   return ax-aw/2<bx+bw/2&&ax+aw/2>bx-bw/2&&ay-ah/2<by+bh/2&&ay+ah/2>by-bh/2;
@@ -5433,8 +5439,13 @@ function update(){
     for(let i=0;i<deadEnemies.length;i++){const d=deadEnemies[i];d.life--;d.y+=0.3;if(d.life>0)deadEnemies[dw++]=d}
     deadEnemies.length=dw;
     if(deadEnemies.length>16){
-      // Accelerate oldest entries instead of hard-popping them
-      for(let i=0;i<deadEnemies.length-16;i++)deadEnemies[i].life=Math.min(deadEnemies[i].life,2);
+      // Hard cap — force-remove oldest entries
+      const excess=deadEnemies.length-16;
+      for(let i=0;i<deadEnemies.length-16;i++)deadEnemies[i].life=0;
+      // Re-compact immediately
+      let dw2=0;
+      for(let i=0;i<deadEnemies.length;i++){if(deadEnemies[i].life>0)deadEnemies[dw2++]=deadEnemies[i]}
+      deadEnemies.length=dw2;
     }
 
     // Wave banner timer (moved from draw to update for frame-rate independence)
@@ -5514,7 +5525,7 @@ function draw(){
         ctx.fillStyle='rgba(13,13,18,'+Math.min(0.6,dPct*0.7)+')';ctx.fillRect(0,0,GW,GH);
         // Red flash at start
         if(dyingTimer>80){
-          ctx.fillStyle='rgba(255,30,0,'+(0.25*(dyingTimer-80)/20)+')';ctx.fillRect(0,0,GW,GH);
+          ctx.fillStyle='rgba(255,30,0,'+(0.15*(dyingTimer-80)/20)+')';ctx.fillRect(0,0,GW,GH);
         }
         // "CONTAINMENT FAILED" text fades in
         if(dPct>0.4){
@@ -5540,10 +5551,12 @@ function draw(){
     // Overclocked screen effect
     if(overclockedGlow>0.01){
       ctx.save();
-      ctx.fillStyle=C.gold;ctx.globalAlpha=overclockedGlow*Math.abs(Math.sin(gt*0.08));
+      // Smooth sine-squared for gentle pulsing instead of abs(sin) strobe
+      const ocPulse=Math.sin(gt*0.05);
+      ctx.fillStyle=C.gold;ctx.globalAlpha=overclockedGlow*0.6*(0.5+ocPulse*ocPulse*0.5);
       ctx.fillRect(0,0,GW,GH);
       // Scan lines get more intense (optimized: fewer, larger lines)
-      ctx.fillStyle='rgba(0,0,0,0.08)';
+      ctx.fillStyle='rgba(0,0,0,0.06)';
       for(let y=0;y<GH;y+=30){
         ctx.fillRect(0,y,GW,4);
       }
@@ -5551,11 +5564,11 @@ function draw(){
     }
 
     if(nukeFlash>0){
-      ctx.fillStyle='#FFF';ctx.globalAlpha=nukeFlash/15*0.4;
+      ctx.fillStyle='#FFF';ctx.globalAlpha=nukeFlash/15*0.25;
       ctx.fillRect(0,0,GW,GH);ctx.globalAlpha=1;
     }
     if(rageFlash>0){
-      ctx.fillStyle='#FF2200';ctx.globalAlpha=rageFlash/12*0.35;
+      ctx.fillStyle='#FF2200';ctx.globalAlpha=rageFlash/12*0.2;
       ctx.fillRect(0,0,GW,GH);ctx.globalAlpha=1;
     }
   }
